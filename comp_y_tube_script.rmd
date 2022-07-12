@@ -1,0 +1,315 @@
+---
+title: "Competitive y-shaped tube"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lme4)
+library(summarytools)
+library(car)
+
+source("./functions/diagnostic_fcns.r")
+source("./functions/boot_glmm.r")
+source("./functions/glmm_stability.r")
+
+#load(".RData")
+```
+
+# Preregistration
+
+## Variables
+### Manipulated variables
+In the control condition, there is single tube. In the test condition, we use a y-shaped tube.
+
+### Measured variables
+ We measure whether chimpanzees stabilize one platform (coded as 0) or two platforms (coded as 1). Besides, we measure trial number within condition (1 - 16) and the order of conditions (test-first, control-first).
+
+## Analysis Plan
+
+### Statistical models
+Generalized linear mixed model: both_trays_stabilised ~ condition + trial_number + order_of_condition + (1 + condition + trial_number ||chimp ID) , family = binomial.
+
+If model does not converge: follow steps here: https://rpubs.com/bbolker/lme4trouble1
+If these procedures do not fix convergence issues, then start removing random effects and control predictor variables:
+1. Remove random slopes (in the following order): trial_number, condition
+
+Transformations
+ Trial number will be z-transformed to a mean of zero and a standard deviation of one. The reference category for the predictor variable condition will be the control condition. The reference category for the predictor variable order of condition will be the control-first.
+
+Inference criteria
+ GLMM: Likelihood ratio tests (R function drop1 with argument 'test' set to "Chisq") with p smaller than .05 will be used as criterion to make inferences about fixed effects. 
+
+Data exclusion
+ Binary response, therefore no outlier. Subjects are excluded if they do not pass the familiarization phase (see data collection procedures). We will repeat those trials on which chimpanzees do not sit (or stand) in front of the apparatus (when the stone is dropped) or do not stabilize either platform a maximum of two times. Trials are excluded from the analysis if the chimpanzees do not stabilize any platform within these three attempts 
+
+###################
+## Load data
+```{r}
+xdata <- read.csv(file = "data/Results_Trays.csv")%>%
+  mutate(both_trays_stabilised = as.numeric(ifelse(platforms_stabilized=="two", 1, 0)))
+
+xdata$trial_w_condition <- rep(seq(1:16), 15)
+
+view(dfSummary(xdata))
+table(xdata$subject, xdata$trial_w_condition)
+table(xdata$trial, xdata$trial_w_condition)
+table(xdata$session, xdata$trial_w_condition)
+table(xdata$subject, xdata$session)
+table(xdata$subject, xdata$counterbalance)
+```
+
+z-transformation of covariates
+
+```{r}
+xdata$z.trial<-as.vector(scale(xdata$trial_w_condition, center = TRUE, scale=TRUE))
+mean(xdata$trial_w_condition)
+sd(xdata$trial_w_condition)
+xdata$condition<- as.factor(xdata$condition)
+levels(xdata$condition)
+
+xdata$counterbalance<- as.factor(xdata$counterbalance)
+levels(xdata$counterbalance)
+
+```
+
+
+```{r}
+mm1<-glmer(both_trays_stabilised ~ condition + z.trial + counterbalance + (1 + condition +z.trial ||subject) , family = binomial, data=xdata, )
+summary(mm1)
+drop1(mm1, test="Chisq")
+```
+Model converges but drop1 does not. 
+
+```{r}
+mm2<-glmer(both_trays_stabilised ~ condition + z.trial + counterbalance + (1 + condition |subject) , family = binomial, data=xdata)
+summary(mm2)
+drop1_mm2<-drop1(mm2, test="Chisq")
+```
+
+model stability
+```{r}
+
+m2.stab=glmm.model.stab(model.res=mm2, para=F, data=xdata)
+
+m2.stab$summary
+
+m.stab.plot(round(m2.stab$summary[, -1], 3))
+```
+
+
+Check collinearity
+```{r}
+library(car)
+xx=lm(both_trays_stabilised ~ condition + z.trial + counterbalance, data=xdata)
+vif(xx) #no issue
+```
+
+Calculate confidence intervals.
+```{r}
+boot.mm2=boot.glmm.pred(mm2, 
+nboots=1000, para=T, n.cores="all-1", resol=1000, level=0.95)
+
+mm2_ci<-boot.mm2$ci.estimates
+
+```
+Calculate confidence intervals for plot.
+```{r}
+xdata$counterbalance.c<- as.vector(scale(as.numeric(xdata$counterbalance, center = TRUE, scale=FALSE)))
+mm2_plot<-glmer(both_trays_stabilised ~ condition + z.trial + counterbalance.c + (1 + condition |subject) , family = binomial, data=xdata)
+
+boot.mm2.pred=boot.glmm.pred(mm2_plot, 
+nboots=1000, para=T, n.cores="all-1", resol=1000, level=0.95, use="condition")
+
+mm2_ci_pred<-boot.mm2.pred$ci.predicted
+
+```
+
+
+### output table
+
+```{r}
+
+model2_table<- bind_cols(as.data.frame(summary(mm2)$coefficients),
+                             mm2_ci,
+                             drop1_mm2) %>%
+  select(Estimate, SE = `Std. Error`,LowerCI = X2.5., UpperCI = X97.5., z=`z value`, p=`Pr(>|z|)`,  Chi2 = LRT, df = npar, p_LRT = `Pr(Chi)`) %>%
+  mutate(across(.cols = c(p, p_LRT), ~ format(round(.x, 3), nsmall=3))) %>% 
+  mutate(across(.cols = c(Estimate:z, Chi2), ~ format(round(.x, 2), nsmall=2))) %>% 
+  mutate(p_LRT=replace(p_LRT, p_LRT==0.000, "<0.001"))%>%
+  mutate(p=replace(p, p==0.000, "<0.001"))
+
+write.csv(model2_table, file = "saves/mm2_results_both_trays_stabilised.csv")
+```
+
+```{r}
+save.image("comp_y_tube.RData")
+```
+
+
+
+#### Plots
+
+```{r}
+
+plot.data<-xdata%>%
+  mutate(condition=fct_recode(as.factor(condition), "Control"="control", "Test"="test"))%>%
+  group_by(subject, condition)%>%
+  summarise(mean_per=mean(both_trays_stabilised))
+
+plot.data$condition2 <- jitter(as.numeric(as.factor(plot.data$condition), amount = .00001))
+
+library(gghalves)
+library(ggsignif)
+
+
+comp_y_plot <- ggplot(data = plot.data, aes(x = condition,  group=condition)) +
+      geom_line(aes(x = condition2, group = subject, y= mean_per,), color = "darkgray", lty = 1, alpha = .3) +
+  
+  geom_point(data = plot.data %>% filter(condition == "Control"), aes(x = condition2, y= mean_per), color = "darkorange", size = 1.5, alpha = .5 ) +
+    geom_point(data = plot.data %>% filter(condition == "Test"), aes(x = condition2, y= mean_per), color = "dodgerblue", size = 1.5, alpha = .5) +
+
+   geom_half_boxplot(
+     data = plot.data %>% filter(condition == "Control"), aes(x = condition2, y = mean_per), position = position_nudge(x = -0.3), 
+     side = "l",outlier.shape = NA, center = TRUE, errorbar.draw = TRUE, width = .05, 
+     fill = 'darkorange', alpha = .5) +
+  
+     geom_half_boxplot(
+     data = plot.data %>% filter(condition == "Test"), aes(x = condition2, y = mean_per), position = position_nudge(x = 0.3), 
+     side = "r",outlier.shape = NA, center = TRUE, errorbar.draw = TRUE, width = .05, 
+     fill = 'dodgerblue', alpha = 1) +
+  geom_errorbar(data = mm2_ci_pred %>% filter(condition == "test"), aes(x=as.numeric(condition), ymin=lower.cl, ymax=upper.cl), color = "dodgerblue", width=0.05, position = position_nudge(x = 0.2) ) +
+  geom_errorbar(data = mm2_ci_pred %>% filter(condition == "control"), aes(x=as.numeric(condition), ymin=lower.cl, ymax=upper.cl), color = "darkorange", width=0.05, position = position_nudge(x = -0.2) ) +
+    geom_point(data = mm2_ci_pred %>% filter(condition == "test"), aes(x=as.numeric(condition), y=fitted), color = "dodgerblue", pch=1, position = position_nudge(x = 0.2) ) +
+  geom_point(data = mm2_ci_pred %>% filter(condition == "control"), aes(x=as.numeric(condition), y=fitted), color = "darkorange", pch=1, position = position_nudge(x = -0.2) ) +
+   # geom_text(x = 1.4, y = 0.8, label = "***") +
+   # geom_segment(aes(x=0.9, xend=1.9, y = 0.78, yend=0.78))+
+  # Define additional settings
+  xlab("Condition") +
+  ylab("Stabilised both trays") +
+  scale_x_continuous(breaks = c(1, 2), labels = c("Control", "Test"), limits = c(0.5,2.5)) +
+  ylim(0, 1) +
+  theme_classic()
+
+comp_y_plot 
+
+ggsave(comp_y_plot , filename = "graphs/comp_y_plot.png", width = 7, height = 8, scale = 0.5)
+
+```
+
+#### trial by trial data
+
+
+```{r loading data, include = FALSE}
+ 
+plot.data2 <- xdata
+
+capFirst <- function(s) {
+    paste(toupper(substring(s, 1, 1)), substring(s, 2), sep = "")
+}
+
+plot.data2$chimp <- capFirst(plot.data2$subject)
+
+plot.data2$trial_total <- rep(seq(1:32), 15)
+
+```
+
+
+
+```{r error=FALSE, echo=FALSE}
+
+theme_set(theme_classic())
+library(scales)
+# Plot
+test_first.plot<-ggplot(plot.data2%>%filter(counterbalance=="testfirst"), aes(x=reorder(factor(chimp), desc(factor(chimp))), y=factor(trial_total), group=platforms_stabilized)) +#both_trays_stabilised 
+  geom_point(stat='identity', aes(shape=platforms_stabilized, col=got_two_rewards), size=5) +
+  scale_shape_manual(values=c(7,15), name="Trays stabilised")+
+      scale_color_manual(name="Reward obtained", 
+                     labels = c("yes", "no"), 
+                     values = c("yes"="chartreuse4", "no"="darkgoldenrod1")) +
+ theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  axis.ticks = element_blank(), 
+  legend.position = "none")+
+  geom_hline(yintercept=16.5, linetype="dashed", "black", size=0.75)+
+#  geom_hline(yintercept=18.5, linetype="dashed", "black", size=0.75)+
+ # scale_x_discrete(name ="Chimp ID")+
+  scale_y_discrete(breaks=c(8,24),labels=c("Test", "Control"))+ #name= "Condition",
+  guides(color = guide_legend(order = 2),
+         shape = guide_legend(order = 1))+
+  coord_flip() 
+
+test_first.plot
+
+```
+
+```{r}
+control_first.plot<-ggplot(plot.data2%>%filter(counterbalance=="controlfirst"), aes(x=reorder(factor(chimp), desc(factor(chimp))), y=factor(trial_total), group=platforms_stabilized)) +#both_trays_stabilised 
+  geom_point(stat='identity', aes(shape=platforms_stabilized, col=got_two_rewards), size=5) +
+  scale_shape_manual(values=c(7,15), name="Trays stabilised")+
+      scale_color_manual(name="Both rewards obtained", 
+                     labels = c("yes", "no"), 
+                     values = c("yes"="chartreuse4", "no"="darkgoldenrod1")) +
+ theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  axis.ticks = element_blank(),legend.position = "bottom")+
+  geom_hline(yintercept=16.5, linetype="dashed", "black", size=0.75)+
+#  geom_hline(yintercept=18.5, linetype="dashed", "black", size=0.75)+
+ # scale_x_discrete(name ="Chimp ID")+
+  scale_y_discrete(breaks=c(8,24),labels=c("Control", "Test"))+ #name= "Condition",
+  guides(color = guide_legend(order = 2),
+         shape = guide_legend(order = 1))+
+  coord_flip() 
+
+control_first.plot
+```
+```{r}
+library(cowplot)
+pg1<-plot_grid(test_first.plot, control_first.plot, ncol=1, rel_heights = c(1,1.1), labels = c("A", "B"))
+
+ggsave(pg1, filename = "graphs/comp_y_plot_trial_data.png", width=10, height=10, scale=0.6)
+
+```
+
+
+## Analyse success in obtaining both food items when only one platform was stabilised
+
+```{r}
+one_platform_control <- xdata %>%
+  filter(platforms_stabilized=="one", condition=="control")%>%
+  mutate(correct=as.numeric(ifelse(got_two_rewards=="yes", 1, ifelse(got_two_rewards=="no", 0, ""))))
+
+one_platform_test <- xdata %>%
+  filter(platforms_stabilized=="one", condition=="test")%>%
+  mutate(correct=as.numeric(ifelse(got_two_rewards=="yes", 1, ifelse(got_two_rewards=="no", 0, ""))))
+
+
+```
+
+intercept-only binomial glmm to test against chance
+```{r}
+one_platform_control%>%   
+  group_by(subject) %>%
+  summarise(correct=mean(correct))%>%
+  ungroup()%>%
+  summarise(mean(correct), se=sd(correct)/ sqrt(length(correct)), length(correct))
+
+mm_control <- glmer(correct ~ 1 + (1|subject), family = "binomial", data = one_platform_control)
+summary(mm_control)
+```
+
+```{r}
+one_platform_test%>% 
+  group_by(subject) %>%
+  summarise(correct=mean(correct))%>%
+  ungroup()%>%
+  summarise(mean(correct), se=sd(correct)/ sqrt(length(correct)), length(correct))
+
+mm_test <- glmer(correct ~ 1 + (1|subject), family = "binomial", data = one_platform_test)
+summary(mm_test)
+```
+
