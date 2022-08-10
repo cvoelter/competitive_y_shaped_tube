@@ -15,7 +15,7 @@ source("./functions/diagnostic_fcns.r")
 source("./functions/boot_glmm.r")
 source("./functions/glmm_stability.r")
 
-#load(".RData")
+load("comp_y_tube.RData")
 ```
 
 # Preregistration
@@ -187,15 +187,15 @@ comp_y_plot <- ggplot(data = plot.data, aes(x = condition,  group=condition)) +
    # geom_text(x = 1.4, y = 0.8, label = "***") +
    # geom_segment(aes(x=0.9, xend=1.9, y = 0.78, yend=0.78))+
   # Define additional settings
-  xlab("Condition") +
-  ylab("Stabilised both trays") +
-  scale_x_continuous(breaks = c(1, 2), labels = c("Control", "Test"), limits = c(0.5,2.5)) +
+  xlab("") +
+  ylab("Stabilised both platforms") +
+  scale_x_continuous(breaks = c(1, 2), labels = c("Single Tube Condition", "Y-shaped Tube Condition"), limits = c(0.5,2.5)) +
   ylim(0, 1) +
   theme_classic()
 
 comp_y_plot 
 
-ggsave(comp_y_plot , filename = "graphs/comp_y_plot.png", width = 7, height = 8, scale = 0.5)
+ggsave(comp_y_plot , filename = "graphs/comp_y_plot.png", width = 7, height = 8, scale = 0.6)
 
 ```
 
@@ -237,7 +237,7 @@ test_first.plot<-ggplot(plot.data2%>%filter(counterbalance=="testfirst"), aes(x=
   geom_hline(yintercept=16.5, linetype="dashed", "black", size=0.75)+
 #  geom_hline(yintercept=18.5, linetype="dashed", "black", size=0.75)+
  # scale_x_discrete(name ="Chimp ID")+
-  scale_y_discrete(breaks=c(8,24),labels=c("Test", "Control"))+ #name= "Condition",
+  scale_y_discrete(breaks=c(8,24),labels=c("Y-shaped Tube Condition", "Single Tube Condition"))+ #name= "Condition",
   guides(color = guide_legend(order = 2),
          shape = guide_legend(order = 1))+
   coord_flip() 
@@ -260,7 +260,7 @@ control_first.plot<-ggplot(plot.data2%>%filter(counterbalance=="controlfirst"), 
   geom_hline(yintercept=16.5, linetype="dashed", "black", size=0.75)+
 #  geom_hline(yintercept=18.5, linetype="dashed", "black", size=0.75)+
  # scale_x_discrete(name ="Chimp ID")+
-  scale_y_discrete(breaks=c(8,24),labels=c("Control", "Test"))+ #name= "Condition",
+  scale_y_discrete(breaks=c(8,24),labels=c("Single Tube Condition", "Y-shaped Tube Condition"))+ #name= "Condition",
   guides(color = guide_legend(order = 2),
          shape = guide_legend(order = 1))+
   coord_flip() 
@@ -312,4 +312,20 @@ one_platform_test%>%
 mm_test <- glmer(correct ~ 1 + (1|subject), family = "binomial", data = one_platform_test)
 summary(mm_test)
 ```
+
+## Analyse whether 2-platform response depends on outcome of previous trial
+
+```{r}
+ydata <- xdata %>%
+  group_by(subject, session) %>%
+  mutate(previous_trial_got2rewards=lag(got_two_rewards), previous_trial_bothtrays=lag(both_trays_stabilised))%>%
+  filter(previous_trial_bothtrays==0)
+```
+
+```{r}
+mm_previous_trial<-glmer(both_trays_stabilised ~ previous_trial_got2rewards + (1|subject) , family = binomial, data=ydata )
+summary(mm_previous_trial)
+drop1(mm_previous_trial, test="Chisq")
+```
+
 
