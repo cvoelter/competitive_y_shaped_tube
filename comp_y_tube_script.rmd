@@ -225,7 +225,7 @@ library(scales)
 # Plot
 test_first.plot<-ggplot(plot.data2%>%filter(counterbalance=="testfirst"), aes(x=reorder(factor(chimp), desc(factor(chimp))), y=factor(trial_total), group=platforms_stabilized)) +#both_trays_stabilised 
   geom_point(stat='identity', aes(shape=platforms_stabilized, col=got_two_rewards), size=5) +
-  scale_shape_manual(values=c(7,15), name="Trays stabilised")+
+  scale_shape_manual(values=c(7,15), name="Platforms stabilised")+
       scale_color_manual(name="Reward obtained", 
                      labels = c("yes", "no"), 
                      values = c("yes"="chartreuse4", "no"="darkgoldenrod1")) +
@@ -249,7 +249,7 @@ test_first.plot
 ```{r}
 control_first.plot<-ggplot(plot.data2%>%filter(counterbalance=="controlfirst"), aes(x=reorder(factor(chimp), desc(factor(chimp))), y=factor(trial_total), group=platforms_stabilized)) +#both_trays_stabilised 
   geom_point(stat='identity', aes(shape=platforms_stabilized, col=got_two_rewards), size=5) +
-  scale_shape_manual(values=c(7,15), name="Trays stabilised")+
+  scale_shape_manual(values=c(7,15), name="Platforms stabilised")+
       scale_color_manual(name="Both rewards obtained", 
                      labels = c("yes", "no"), 
                      values = c("yes"="chartreuse4", "no"="darkgoldenrod1")) +
@@ -271,7 +271,7 @@ control_first.plot
 library(cowplot)
 pg1<-plot_grid(test_first.plot, control_first.plot, ncol=1, rel_heights = c(1,1.1), labels = c("A", "B"))
 
-ggsave(pg1, filename = "graphs/comp_y_plot_trial_data.png", width=10, height=10, scale=0.6)
+ggsave(pg1, filename = "graphs/comp_y_plot_trial_data.png", width=10.5, height=10, scale=0.60)
 
 ```
 
