@@ -153,14 +153,21 @@ save.image("comp_y_tube.RData")
 #### Plots
 
 ```{r}
-
 plot.data<-xdata%>%
   mutate(condition=fct_recode(as.factor(condition), "Control"="control", "Test"="test"))%>%
   group_by(subject, condition)%>%
   summarise(mean_per=mean(both_trays_stabilised))
 
-plot.data$condition2 <- jitter(as.numeric(as.factor(plot.data$condition), amount = .00001))
+#mean and se value
+plot.data %>% 
+  group_by(condition) %>%
+  summarise(mean(mean_per), se=sd(mean_per)/(sqrt(length(mean_per))))
 
+plot.data$condition2 <- jitter(as.numeric(as.factor(plot.data$condition), amount = .00001))
+```
+
+
+```{r}
 library(gghalves)
 library(ggsignif)
 
